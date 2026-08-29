@@ -157,13 +157,19 @@ func cmdCreate(ctx context.Context, p *output.Printer, args []string) int {
 		code = exit.NotApplied
 	}
 
+	// Гоча: `idReadable` дублирует `id` намеренно. У `get` данные — это сырая
+	// задача, где `id` внутренний (`2-1782`), а `idReadable` человеческий
+	// (`FB-1151`); в собранных здесь картах `id` человеческий. Читающий
+	// `data.idReadable` получает одно и то же в любой команде — без него
+	// агент видит `null` и решает, что задача не создалась (так завели дубль).
 	data := map[string]any{
-		"id":      created.IDReadable,
-		"url":     cfg.IssueURL(created.IDReadable),
-		"summary": summary,
-		"fields":  fieldMap(issue),
-		"board":   onBoard,
-		"missing": missing,
+		"id":         created.IDReadable,
+		"idReadable": created.IDReadable,
+		"url":        cfg.IssueURL(created.IDReadable),
+		"summary":    summary,
+		"fields":     fieldMap(issue),
+		"board":      onBoard,
+		"missing":    missing,
 	}
 
 	return p.Result("create", code, data, func(w io.Writer) {
@@ -280,10 +286,11 @@ func cmdSet(ctx context.Context, p *output.Printer, args []string) int {
 	}
 
 	data := map[string]any{
-		"id":      issue.IDReadable,
-		"url":     cfg.IssueURL(issue.IDReadable),
-		"fields":  fieldMap(issue),
-		"missing": missing,
+		"id":         issue.IDReadable,
+		"idReadable": issue.IDReadable,
+		"url":        cfg.IssueURL(issue.IDReadable),
+		"fields":     fieldMap(issue),
+		"missing":    missing,
 	}
 	return p.Result("set", code, data, func(w io.Writer) {
 		fmt.Fprintf(w, "%s — %s\n", issue.IDReadable, issue.Summary)
@@ -330,7 +337,7 @@ func cmdComment(ctx context.Context, p *output.Printer, args []string) int {
 		return fail(p, "comment", err)
 	}
 
-	data := map[string]any{"id": id, "url": cfg.IssueURL(id), "chars": len(text)}
+	data := map[string]any{"id": id, "idReadable": id, "url": cfg.IssueURL(id), "chars": len(text)}
 	return p.Result("comment", exit.OK, data, func(w io.Writer) {
 		fmt.Fprintf(w, "комментарий добавлен: %s\n", cfg.IssueURL(id))
 	})
@@ -359,7 +366,12 @@ func cmdBoard(ctx context.Context, p *output.Printer, args []string) int {
 		return fail(p, "board", err)
 	}
 
-	data := map[string]any{"id": issue.IDReadable, "agile_id": cfg.AgileID, "sprint_id": cfg.SprintID}
+	data := map[string]any{
+		"id":         issue.IDReadable,
+		"idReadable": issue.IDReadable,
+		"agile_id":   cfg.AgileID,
+		"sprint_id":  cfg.SprintID,
+	}
 	return p.Result("board", exit.OK, data, func(w io.Writer) {
 		fmt.Fprintf(w, "%s на доске\n", issue.IDReadable)
 	})

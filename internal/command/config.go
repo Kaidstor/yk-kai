@@ -36,13 +36,13 @@ func cmdConfig(p *output.Printer, args []string) int {
 		return p.Fail("config", exit.Tool, "usage", "%s", err)
 	}
 
-	code := exit.OK
+	// Показать пустые настройки — не отказ: вывод config подставляется в скилл
+	// при загрузке, и ненулевой код уронил бы загрузку всего скилла
 	if errors.Is(err, config.ErrNoConfig) {
 		p.Warn("настройки не заполнены: yk-kai config init")
-		code = exit.NotApplied
 	}
 
-	return p.Result("config", code, map[string]any{
+	return p.Result("config", exit.OK, map[string]any{
 		"path":      path,
 		"host":      cfg.Host,
 		"project":   cfg.Project,

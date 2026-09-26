@@ -12,7 +12,13 @@ CLI для YouTrack: задачи, поля, комментарии, доска,
 go install github.com/Kaidstor/yk-kai@latest
 ```
 
-Бинарь окажется в `~/go/bin/yk-kai`.
+Бинарь окажется в `~/go/bin/yk-kai`. Так `yk-kai version` отвечает `dev`;
+с версией — сборка из клона:
+
+```sh
+git clone https://github.com/Kaidstor/yk-kai && cd yk-kai
+go install -ldflags "-X github.com/Kaidstor/yk-kai/internal/command.version=$(git describe --tags --always)" .
+```
 
 ## Настройка
 
@@ -68,12 +74,19 @@ yk-kai worklog PROJ-123 2h "что делал"
 
 ## Скилл для агента
 
-В `skills/yk/` лежит скилл для Claude Code: команды, коды выхода, синтаксис
-поиска и грабли API, на которых инструмент уже обжигался. Поставить себе:
+В `skills/yk/` лежит скилл для Claude Code: синтаксис поиска, порядок действий
+и грабли API, на которых инструмент уже обжигался. Справку `yk-kai --help` и
+текущие настройки `yk-kai config --human` он подставляет при загрузке, поэтому
+`yk-kai` должен быть в PATH, а настройки — заполнены. Поставить себе симлинком,
+чтобы скилл обновлялся вместе с репозиторием:
 
 ```sh
-cp -r skills/yk ~/.claude/skills/yk
+ln -s "$PWD/skills/yk" ~/.claude/skills/yk
 ```
+
+Правила своей команды, которых нет в настройках (когда закрывать задачу и т.п.),
+можно положить в `~/.claude/skills/yk-local.md` — скилл прочитает его, если он
+есть.
 
 Дальше агент зовёт `yk-kai` вместо самодельных запросов к API — и понимает, что
 означает код выхода 1.

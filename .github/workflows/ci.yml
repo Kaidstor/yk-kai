@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          bad="$(gofmt -l .)"
+          if [ -n "$bad" ]; then
+            echo "неотформатированные файлы:"; echo "$bad"; exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go test ./...

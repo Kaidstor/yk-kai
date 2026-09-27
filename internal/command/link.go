@@ -25,17 +25,20 @@ var LinkTypes = []string{
 	"duplicates",
 }
 
-func cmdLink(ctx context.Context, p *output.Printer, args []string) int {
+// linkArgs разбирает `<ISSUE> <тип из нескольких слов> <ISSUE>`.
+func linkArgs(command string, args []string) (source, linkType, target string, err error) {
 	if len(args) < 3 {
-		return p.Fail("link", exit.Tool, "usage",
-			"нужно: yk-kai link PROJ-123 \"depends on\" PROJ-456; типы: %s", strings.Join(LinkTypes, ", "))
+		return "", "", "", fmt.Errorf("нужно: yk-kai %s PROJ-123 \"depends on\" PROJ-456; типы: %s",
+			command, strings.Join(LinkTypes, ", "))
 	}
+	source = args[0]
+	target = args[len(args)-1]
+	linkType, err = youtrack.Normalize("тип связи", strings.Join(args[1:len(args)-1], " "), LinkTypes)
+	return source, linkType, target, err
+}
 
-	source := args[0]
-	target := args[len(args)-1]
-	linkType := strings.Join(args[1:len(args)-1], " ")
-
-	normalized, err := youtrack.Normalize("тип связи", linkType, LinkTypes)
+func cmdLink(ctx context.Context, p *output.Printer, args []string) int {
+	source, normalized, target, err := linkArgs("link", args)
 	if err != nil {
 		return p.Fail("link", exit.Tool, "usage", "%s", err)
 	}
@@ -73,6 +76,62 @@ func cmdLink(ctx context.Context, p *output.Printer, args []string) int {
 	})
 }
 
+// cmdUnlink снимает связь командой `remove <тип> <ISSUE>`.
+//
+// Гоча проверки: названия сторон в ответе не совпадают с командами (relates to
+// приходит как «Relates»), поэтому снятие сверяется числом связей с целевой
+// задачей до и после, а не поиском связи нужного типа.
+func cmdUnlink(ctx context.Context, p *output.Printer, args []string) int {
+	source, normalized, target, err := linkArgs("unlink", args)
+	if err != nil {
+		return p.Fail("unlink", exit.Tool, "usage", "%s", err)
+	}
+
+	c, cfg, _, err := client()
+	if err != nil {
+		return p.Fail("unlink", exit.Tool, "auth", "%s", err)
+	}
+
+	before, err := c.Links(ctx, source)
+	if err != nil {
+		return fail(p, "unlink", err)
+	}
+	if countLinks(before, target) == 0 {
+		return p.Fail("unlink", exit.NotFound, "not_found",
+			"у %s нет связей с %s", before.IDReadable, target)
+	}
+
+	if err := c.Command(ctx, "remove "+normalized+" "+target, []string{source}); err != nil {
+		return fail(p, "unlink", err)
+	}
+
+	issue, err := c.Links(ctx, source)
+	if err != nil {
+		return fail(p, "unlink", err)
+	}
+
+	code := exit.OK
+	if countLinks(issue, target) >= countLinks(before, target) {
+		p.Warn("связь %s %s не снялась — проверь тип связи (yk-kai links %s) или глазами: %s",
+			normalized, target, source, cfg.IssueURL(source))
+		code = exit.NotApplied
+	}
+
+	data := map[string]any{
+		"source":     source,
+		"idReadable": issue.IDReadable,
+		"type":       normalized,
+		"target":     target,
+		"links":      issue.Links,
+	}
+	return p.Result("unlink", code, data, func(w io.Writer) {
+		fmt.Fprintf(w, "%s: снята связь %s %s\n", source, normalized, target)
+		if hasAny(issue) {
+			printLinks(w, issue)
+		}
+	})
+}
+
 func cmdLinks(ctx context.Context, p *output.Printer, args []string) int {
 	if len(args) == 0 {
 		return p.Fail("links", exit.Tool, "usage", "нужен id задачи: yk-kai links PROJ-123")
@@ -99,14 +158,19 @@ func cmdLinks(ctx context.Context, p *output.Printer, args []string) int {
 }
 
 func hasLink(issue *youtrack.Issue, target string) bool {
+	return countLinks(issue, target) > 0
+}
+
+func countLinks(issue *youtrack.Issue, target string) int {
+	n := 0
 	for _, link := range issue.Links {
 		for _, linked := range link.Issues {
 			if strings.EqualFold(linked.IDReadable, target) {
-				return true
+				n++
 			}
 		}
 	}
-	return false
+	return n
 }
 
 func hasAny(issue *youtrack.Issue) bool {

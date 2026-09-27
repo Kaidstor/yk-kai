@@ -42,6 +42,7 @@ const usage = `yk-kai — задачи YouTrack из терминала и из 
 Связи и время:
   link <ISSUE> <тип> <ISSUE>    depends on, subtask of, parent for, relates to, duplicates
   links <ISSUE>                 показать связи задачи
+  unlink <ISSUE> <тип> <ISSUE>  снять связь; типы те же, что у link
   worklog <ISSUE> <длит> [текст]  списать время: 2h, 45m, "1d 2h"
 
 Служебное:
@@ -115,6 +116,8 @@ func Run(args []string) int {
 		return cmdLink(ctx, p, rest)
 	case "links":
 		return cmdLinks(ctx, p, rest)
+	case "unlink":
+		return cmdUnlink(ctx, p, rest)
 	case "worklog":
 		return cmdWorklog(ctx, p, rest)
 	case "config":

@@ -189,3 +189,37 @@ func TestWorkDateSurvivesTimezone(t *testing.T) {
 		t.Fatalf("дата уехала: %s", got.UTC())
 	}
 }
+
+func TestLinkArgsMultiWordType(t *testing.T) {
+	source, linkType, target, err := linkArgs("unlink", []string{"PROJ-1", "relates", "to", "PROJ-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != "PROJ-1" || linkType != "relates to" || target != "PROJ-2" {
+		t.Fatalf("разобрано не так: %q %q %q", source, linkType, target)
+	}
+
+	if _, _, _, err := linkArgs("unlink", []string{"PROJ-1", "PROJ-2"}); err == nil ||
+		!strings.Contains(err.Error(), "yk-kai unlink") {
+		t.Fatalf("без типа нужна подсказка про unlink, получено %v", err)
+	}
+	if _, _, _, err := linkArgs("unlink", []string{"PROJ-1", "blocks", "PROJ-2"}); err == nil {
+		t.Fatal("незнакомый тип связи должен отвергаться до запроса")
+	}
+}
+
+// Снятие сверяется числом: у задачи к той же цели бывает связь другого типа,
+// и поиск «есть ли связь» счёл бы снятие несостоявшимся.
+func TestCountLinksAcrossTypes(t *testing.T) {
+	issue := &youtrack.Issue{Links: []youtrack.Link{
+		{LinkType: youtrack.LinkType{Name: "Relates"}, Issues: []youtrack.Issue{{IDReadable: "PROJ-2"}}},
+		{LinkType: youtrack.LinkType{Name: "Depend"}, Direction: "OUTWARD",
+			Issues: []youtrack.Issue{{IDReadable: "proj-2"}, {IDReadable: "PROJ-3"}}},
+	}}
+	if got := countLinks(issue, "PROJ-2"); got != 2 {
+		t.Fatalf("связей с PROJ-2: %d, ждали 2", got)
+	}
+	if countLinks(issue, "PROJ-9") != 0 || hasLink(issue, "PROJ-9") {
+		t.Fatal("связи с PROJ-9 нет")
+	}
+}

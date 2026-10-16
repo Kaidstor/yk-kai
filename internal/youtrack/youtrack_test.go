@@ -1,11 +1,39 @@
 package youtrack
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/Kaidstor/yk-kai/internal/config"
 )
+
+func TestUpdateReturnsIssueFromSamePost(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path+" fields="+r.URL.Query().Get("fields"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"2-1","idReadable":"PROJ-1","summary":"тест",` +
+			`"customFields":[{"name":"State","value":{"name":"Done","$type":"StateBundleElement"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := New(config.Config{Host: srv.URL}, "token")
+	issue, err := c.Update(context.Background(), "PROJ-1", []FieldUpdate{StateField("Done")}, nil, nil)
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "POST /api/issues/PROJ-1 fields="+FieldsShort {
+		t.Fatalf("ждали один POST с полями задачи, были: %v", calls)
+	}
+	if issue.IDReadable != "PROJ-1" || issue.Summary != "тест" || issue.Field("State") != "Done" {
+		t.Fatalf("задача из ответа POST разобрана не так: %+v", issue)
+	}
+}
 
 func TestNormalize(t *testing.T) {
 	cases := []struct {

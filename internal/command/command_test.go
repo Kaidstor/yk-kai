@@ -81,6 +81,28 @@ func TestDiffFindsUnappliedFields(t *testing.T) {
 	}
 }
 
+func TestSetChangesReportValueAfterWrite(t *testing.T) {
+	issue := &youtrack.Issue{IDReadable: "PROJ-1", Summary: "новый заголовок", Fields: []youtrack.CustomField{
+		{Name: "State", Value: json.RawMessage(`{"name":"Done"}`)},
+		{Name: "Assignee", Value: json.RawMessage(`null`)},
+	}}
+	wishes := []wish{
+		{name: "State", want: "Done"},
+		{name: "Assignee", want: "alice"},
+	}
+
+	changes := setChanges(issue, wishes, true, false)
+	if len(changes) != 3 || changes[0].Field != "summary" || !changes[1].Applied || changes[2].Applied {
+		t.Fatalf("изменения собраны не так: %+v", changes)
+	}
+
+	got := changeLine(issue, changes)
+	want := "PROJ-1: summary → новый заголовок, State → Done, Assignee не применилось (сейчас —, просили alice)"
+	if got != want {
+		t.Fatalf("строка для человека:\n%s\nждали:\n%s", got, want)
+	}
+}
+
 func TestReadText(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "desc.md")

@@ -131,7 +131,11 @@ func cmdCreate(ctx context.Context, p *output.Printer, args []string) int {
 		return fail(p, "create", err)
 	}
 
-	issue, missing, err := ensureFields(ctx, c, created.IDReadable, wishes)
+	issue, err := c.Get(ctx, created.IDReadable, false)
+	if err != nil {
+		return fail(p, "create", err)
+	}
+	issue, missing, err := ensureFields(ctx, c, issue, wishes)
 	if err != nil {
 		return fail(p, "create", err)
 	}
@@ -226,23 +230,36 @@ func cmdGet(ctx context.Context, p *output.Printer, args []string) int {
 }
 
 func cmdSet(ctx context.Context, p *output.Printer, args []string) int {
-	fs := flag.NewFlagSet("set", flag.ContinueOnError)
+	return setIssue(ctx, p, "set", args)
+}
+
+func cmdState(ctx context.Context, p *output.Printer, args []string) int {
+	if len(args) < 2 {
+		return p.Fail("state", exit.Tool, "usage", "нужно: yk-kai state PROJ-123 \"In Progress\"")
+	}
+	id := args[0]
+	state := strings.Join(args[1:], " ")
+	return setIssue(ctx, p, "state", []string{id, "--state", state})
+}
+
+func setIssue(ctx context.Context, p *output.Printer, command string, args []string) int {
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var f fieldFlags
 	f.bind(fs, true)
 	positional, err := parseArgs(fs, args)
 	if err != nil {
-		return p.Fail("set", exit.Tool, "usage", "%s", err)
+		return p.Fail(command, exit.Tool, "usage", "%s", err)
 	}
 	if len(positional) == 0 {
-		return p.Fail("set", exit.Tool, "usage",
+		return p.Fail(command, exit.Tool, "usage",
 			"нужен id задачи: yk-kai set PROJ-123 --state Review --assignee <login>")
 	}
 	id := positional[0]
 
 	wishes, wishErr := f.wishes()
 	if wishErr != nil {
-		return p.Fail("set", exit.Tool, "usage", "%s", wishErr)
+		return p.Fail(command, exit.Tool, "usage", "%s", wishErr)
 	}
 
 	var summary, description *string
@@ -252,31 +269,32 @@ func cmdSet(ctx context.Context, p *output.Printer, args []string) int {
 	if f.desc != "" || f.descFile != "" {
 		text, err := readText(f.desc, f.descFile)
 		if err != nil {
-			return p.Fail("set", exit.Tool, "usage", "не прочитать описание: %s", err)
+			return p.Fail(command, exit.Tool, "usage", "не прочитать описание: %s", err)
 		}
 		description = &text
 	}
 
 	if len(wishes) == 0 && summary == nil && description == nil {
-		return p.Fail("set", exit.Tool, "usage", "нечего менять: задай --type/--priority/--state/--assignee/--summary/--desc")
+		return p.Fail(command, exit.Tool, "usage", "нечего менять: задай --type/--priority/--state/--assignee/--summary/--desc")
 	}
 
 	c, cfg, _, err := client()
 	if err != nil {
-		return p.Fail("set", exit.Tool, "auth", "%s", err)
+		return p.Fail(command, exit.Tool, "auth", "%s", err)
 	}
 
 	updates := make([]youtrack.FieldUpdate, 0, len(wishes))
 	for _, w := range wishes {
 		updates = append(updates, w.update)
 	}
-	if err := c.Update(ctx, id, updates, summary, description); err != nil {
-		return fail(p, "set", err)
+	issue, err := c.Update(ctx, id, updates, summary, description)
+	if err != nil {
+		return fail(p, command, err)
 	}
 
-	issue, missing, err := ensureFields(ctx, c, id, wishes)
+	issue, missing, err := ensureFields(ctx, c, issue, wishes)
 	if err != nil {
-		return fail(p, "set", err)
+		return fail(p, command, err)
 	}
 
 	code := exit.OK
@@ -285,26 +303,59 @@ func cmdSet(ctx context.Context, p *output.Printer, args []string) int {
 		code = exit.NotApplied
 	}
 
+	changes := setChanges(issue, wishes, summary != nil, description != nil)
 	data := map[string]any{
-		"id":         issue.IDReadable,
-		"idReadable": issue.IDReadable,
-		"url":        cfg.IssueURL(issue.IDReadable),
-		"fields":     fieldMap(issue),
-		"missing":    missing,
+		"id":           issue.IDReadable,
+		"idReadable":   issue.IDReadable,
+		"summary":      issue.Summary,
+		"url":          cfg.IssueURL(issue.IDReadable),
+		"customFields": issue.Fields,
+		"fields":       fieldMap(issue),
+		"changed":      changes,
+		"missing":      missing,
 	}
-	return p.Result("set", code, data, func(w io.Writer) {
-		fmt.Fprintf(w, "%s — %s\n", issue.IDReadable, issue.Summary)
-		printFields(w, issue)
+	return p.Result(command, code, data, func(w io.Writer) {
+		fmt.Fprintln(w, changeLine(issue, changes))
 	})
 }
 
-func cmdState(ctx context.Context, p *output.Printer, args []string) int {
-	if len(args) < 2 {
-		return p.Fail("state", exit.Tool, "usage", "нужно: yk-kai state PROJ-123 \"In Progress\"")
+// change — что set просил поменять и что YouTrack вернул после записи.
+type change struct {
+	Field   string `json:"field"`
+	Want    string `json:"want,omitempty"`
+	Value   string `json:"value"`
+	Applied bool   `json:"applied"`
+}
+
+func setChanges(issue *youtrack.Issue, wishes []wish, summary, description bool) []change {
+	out := make([]change, 0, len(wishes)+2)
+	if summary {
+		out = append(out, change{Field: "summary", Value: issue.Summary, Applied: true})
 	}
-	id := args[0]
-	state := strings.Join(args[1:], " ")
-	return cmdSet(ctx, p, []string{id, "--state", state})
+	if description {
+		out = append(out, change{Field: "description", Value: "обновлено", Applied: true})
+	}
+	for _, w := range wishes {
+		got := issue.Field(w.name)
+		out = append(out, change{Field: w.name, Want: w.want, Value: got, Applied: strings.EqualFold(got, w.want)})
+	}
+	return out
+}
+
+func changeLine(issue *youtrack.Issue, changes []change) string {
+	parts := make([]string, 0, len(changes))
+	for _, ch := range changes {
+		value := ch.Value
+		if value == "" {
+			value = "—"
+		}
+		if ch.Applied {
+			parts = append(parts, fmt.Sprintf("%s → %s", ch.Field, value))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s не применилось (сейчас %s, просили %s)", ch.Field, value, ch.Want))
+		}
+	}
+	return issue.IDReadable + ": " + strings.Join(parts, ", ")
 }
 
 func cmdComment(ctx context.Context, p *output.Printer, args []string) int {
@@ -377,20 +428,13 @@ func cmdBoard(ctx context.Context, p *output.Printer, args []string) int {
 	})
 }
 
-// ensureFields перечитывает задачу и дожимает поля, которые не применились.
+// ensureFields сверяет прочитанную задачу с желаемым и дожимает поля, которые
+// не применились.
 //
 // Гоча ради этой функции: YouTrack отвечает на POST успехом и тогда, когда
 // поле не записал. Так задачи заводились без Assignee и с дефолтным
 // приоритетом, а вызывающий видел «создано» и шёл дальше.
-func ensureFields(ctx context.Context, c *youtrack.Client, id string, wishes []wish) (*youtrack.Issue, []string, error) {
-	issue, err := c.Get(ctx, id, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(wishes) == 0 {
-		return issue, nil, nil
-	}
-
+func ensureFields(ctx context.Context, c *youtrack.Client, issue *youtrack.Issue, wishes []wish) (*youtrack.Issue, []string, error) {
 	retry := diff(issue, wishes)
 	if len(retry) == 0 {
 		return issue, nil, nil
@@ -400,11 +444,7 @@ func ensureFields(ctx context.Context, c *youtrack.Client, id string, wishes []w
 	for _, w := range retry {
 		updates = append(updates, w.update)
 	}
-	if err := c.Update(ctx, id, updates, nil, nil); err != nil {
-		return nil, nil, err
-	}
-
-	issue, err = c.Get(ctx, id, false)
+	issue, err := c.Update(ctx, issue.IDReadable, updates, nil, nil)
 	if err != nil {
 		return nil, nil, err
 	}

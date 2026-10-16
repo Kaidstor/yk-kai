@@ -71,10 +71,13 @@ func (c *Client) Links(ctx context.Context, id string) (*Issue, error) {
 	return &issue, nil
 }
 
-// Update правит поля задачи. Гоча: YouTrack отвечает {"id": ...} и на запрос,
-// который ничего не изменил, поэтому вызывающий обязан перечитать задачу и
-// сверить — успешный ответ здесь не доказательство.
-func (c *Client) Update(ctx context.Context, id string, fields []FieldUpdate, summary, description *string) error {
+// Update правит поля задачи и возвращает её состояние после записи — тем же
+// набором полей, что Get, из ответа на тот же POST.
+//
+// Гоча: YouTrack отвечает успехом и на запрос, который поле не записал, поэтому
+// вызывающий обязан сверить возвращённые значения с желаемыми — сам факт
+// ответа здесь не доказательство.
+func (c *Client) Update(ctx context.Context, id string, fields []FieldUpdate, summary, description *string) (*Issue, error) {
 	body := map[string]any{}
 	if len(fields) > 0 {
 		body["customFields"] = fields
@@ -86,9 +89,14 @@ func (c *Client) Update(ctx context.Context, id string, fields []FieldUpdate, su
 		body["description"] = *description
 	}
 	if len(body) == 0 {
-		return nil
+		return c.Get(ctx, id, false)
 	}
-	return c.Post(ctx, "/api/issues/"+url.PathEscape(id), nil, body, nil)
+	var issue Issue
+	query := url.Values{"fields": []string{FieldsShort}}
+	if err := c.Post(ctx, "/api/issues/"+url.PathEscape(id), query, body, &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }
 
 // Comment добавляет комментарий.

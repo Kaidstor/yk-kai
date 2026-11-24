@@ -1,6 +1,6 @@
 ---
 name: yk
-description: Работа с YouTrack через CLI yk-kai — поиск, создание, обновление задач, комментарии, доска, связи, логирование времени. Используй когда пользователь упоминает YouTrack, задачи, тикеты, id задачи вида PROJ-123 (префикс — проект из настроек), или просит найти/создать/обновить задачу.
+description: Работа с YouTrack через CLI yk-kai — поиск, создание, обновление задач, комментарии, связи. Используй когда пользователь упоминает YouTrack, задачи, тикеты, id задачи вида PROJ-123 (префикс — проект из настроек), или просит найти/создать/обновить задачу.
 allowed-tools: Bash(yk-kai:*)
 ---
 
@@ -72,8 +72,8 @@ id задач подставлять их, а не `PROJ` и `alice` из при
 
 Это грабли ручного REST — они закрыты, но знать о них надо, чтобы понимать вывод:
 
-- **Задача не попадает на доску сама.** `create` кладёт её в спринт, `board`
-  чинит забытое. Не прицепилось — команда вернёт код 1 и скажет, чем добить.
+- **Задача не попадает на доску сама.** `create` кладёт её в спринт из настроек
+  (отключить — `--no-board`). Не прицепилось — команда вернёт код 1 и ссылку.
 - **Успешный ответ ≠ применённое поле.** YouTrack отвечает `{"id": ...}` и на
   запрос, который ничего не записал (так задачи оставались без Assignee).
   `create` и `set` сверяют задачу после записи, дожимают непринятые поля и
@@ -94,9 +94,27 @@ id задач подставлять их, а не `PROJ` и `alice` из при
   типа связи и сторонами. После установки CLI перечитывает связи и проверяет,
   что связь появилась.
 - **Стороны связи различаются по направлению**: у Subtask это `parent for`
-  против `subtask of`. `links` и `get --full` печатают сторону этой задачи.
-- **Время списывается полднем UTC.** YouTrack округляет метку до дня по UTC, и
-  полночь по местному времени восточнее Гринвича уезжает на сутки назад.
+  против `subtask of`. `get --full` печатает сторону этой задачи.
+
+## Команды и флаги
+
+```bash
+yk-kai create "Summary" [--type Bug] [--priority Major] [--assignee alice] [--state "To Do"] [--desc-file f.md] [--no-board]
+yk-kai get PROJ-123 [--full]                      # алиасы: show, view (и префикс issue/issues)
+yk-kai set PROJ-123 --state Review --assignee alice  # алиасы: update, edit; флаги: --type --priority --state --assignee --summary --desc --desc-file
+yk-kai state PROJ-123 "In Progress"               # сокращение для set --state
+yk-kai comment PROJ-123 [--file msg.md | "текст"] # без аргумента читает stdin
+yk-kai search "project: PROJ #Unresolved" [--limit 20]  # алиасы: list, ls; можно --query
+yk-kai link PROJ-123 "depends on" PROJ-456        # depends on | is required for | relates to | subtask of | parent for | duplicates
+yk-kai unlink PROJ-123 "depends on" PROJ-456
+yk-kai config [init] | doctor | version
+```
+
+- Значения `--type`: `Bug | Task | Feature | Exception | Cosmetics | Usability Problem | Performance Problem | Epic` (по умолчанию `Task`).
+- Значения `--priority`: `Show-stopper | Critical | Major | Normal | Minor` (по умолчанию `Normal`).
+- Значения `--state`: `Backlog | To Do | In Progress | Review | Testing & Deploy | Done`.
+- Общие флаги (в любом месте): `--json` (по умолчанию), `--human`, `-h`/`--help`.
+- Коды выхода: `0` ок, `1` YouTrack не применил, `2` ошибка аргументов/инструмента, `3` не найдено, `4` таймаут.
 
 ## Когда что-то не работает
 
@@ -113,8 +131,6 @@ id задач подставлять их, а не `PROJ` и `alice` из при
 
 ## Настройки
 
+Если блок ниже не развернулся (не Claude Code), узнай текущие `host`, `project` и `assignee` через `yk-kai config --human`.
+
 !`yk-kai config --human`
-
-## Справка
-
-!`yk-kai --help`

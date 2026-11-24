@@ -112,7 +112,7 @@ func cmdUnlink(ctx context.Context, p *output.Printer, args []string) int {
 
 	code := exit.OK
 	if countLinks(issue, target) >= countLinks(before, target) {
-		p.Warn("связь %s %s не снялась — проверь тип связи (yk-kai links %s) или глазами: %s",
+		p.Warn("связь %s %s не снялась — проверь тип связи (yk-kai get --full %s) или глазами: %s",
 			normalized, target, source, cfg.IssueURL(source))
 		code = exit.NotApplied
 	}
@@ -129,31 +129,6 @@ func cmdUnlink(ctx context.Context, p *output.Printer, args []string) int {
 		if hasAny(issue) {
 			printLinks(w, issue)
 		}
-	})
-}
-
-func cmdLinks(ctx context.Context, p *output.Printer, args []string) int {
-	if len(args) == 0 {
-		return p.Fail("links", exit.Tool, "usage", "нужен id задачи: yk-kai links PROJ-123")
-	}
-
-	c, _, _, err := client()
-	if err != nil {
-		return p.Fail("links", exit.Tool, "auth", "%s", err)
-	}
-
-	issue, err := c.Links(ctx, args[0])
-	if err != nil {
-		return fail(p, "links", err)
-	}
-
-	return p.Result("links", exit.OK, issue, func(w io.Writer) {
-		if len(issue.Links) == 0 || !hasAny(issue) {
-			fmt.Fprintf(w, "%s: связей нет\n", issue.IDReadable)
-			return
-		}
-		fmt.Fprintf(w, "%s\n", issue.IDReadable)
-		printLinks(w, issue)
 	})
 }
 

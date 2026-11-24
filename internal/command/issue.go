@@ -149,7 +149,7 @@ func cmdCreate(ctx context.Context, p *output.Printer, args []string) int {
 		p.Warn("доска не настроена (agile_id + sprint_id) — задача создана без привязки")
 	default:
 		if err := c.Board(ctx, created.ID); err != nil {
-			p.Warn("на доску не прицепилось (%s); повтори: yk-kai board %s", err, created.IDReadable)
+			p.Warn("на доску не прицепилось (%s) — проверь руками: %s", err, cfg.IssueURL(created.IDReadable))
 			code = exit.NotApplied
 		} else {
 			onBoard = true
@@ -391,40 +391,6 @@ func cmdComment(ctx context.Context, p *output.Printer, args []string) int {
 	data := map[string]any{"id": id, "idReadable": id, "url": cfg.IssueURL(id), "chars": len(text)}
 	return p.Result("comment", exit.OK, data, func(w io.Writer) {
 		fmt.Fprintf(w, "комментарий добавлен: %s\n", cfg.IssueURL(id))
-	})
-}
-
-func cmdBoard(ctx context.Context, p *output.Printer, args []string) int {
-	if len(args) == 0 {
-		return p.Fail("board", exit.Tool, "usage", "нужен id задачи: yk-kai board PROJ-123")
-	}
-	id := args[0]
-
-	c, cfg, _, err := client()
-	if err != nil {
-		return p.Fail("board", exit.Tool, "auth", "%s", err)
-	}
-	if !cfg.BoardConfigured() {
-		return p.Fail("board", exit.Tool, "usage",
-			"доска не настроена: заполни agile_id и sprint_id (yk-kai config)")
-	}
-
-	issue, err := c.Get(ctx, id, false)
-	if err != nil {
-		return fail(p, "board", err)
-	}
-	if err := c.Board(ctx, issue.ID); err != nil {
-		return fail(p, "board", err)
-	}
-
-	data := map[string]any{
-		"id":         issue.IDReadable,
-		"idReadable": issue.IDReadable,
-		"agile_id":   cfg.AgileID,
-		"sprint_id":  cfg.SprintID,
-	}
-	return p.Result("board", exit.OK, data, func(w io.Writer) {
-		fmt.Fprintf(w, "%s на доске\n", issue.IDReadable)
 	})
 }
 

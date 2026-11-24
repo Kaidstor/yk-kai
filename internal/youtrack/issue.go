@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strconv"
-	"time"
 )
 
 // Наборы полей запроса. YouTrack по умолчанию отдаёт голый id, поэтому всё,
@@ -144,18 +143,6 @@ func (c *Client) Command(ctx context.Context, query string, issues []string) err
 		"query":  query,
 		"issues": list,
 	}, nil)
-}
-
-// WorkItem списывает время. duration — в записи YouTrack ("2h", "45m", "1d 2h").
-func (c *Client) WorkItem(ctx context.Context, id, duration, text string, date time.Time) error {
-	body := map[string]any{
-		"duration": map[string]string{"presentation": duration},
-		"date":     date.UnixMilli(),
-	}
-	if text != "" {
-		body["text"] = text
-	}
-	return c.Post(ctx, "/api/issues/"+url.PathEscape(id)+"/timeTracking/workItems", nil, body, nil)
 }
 
 // Me — под каким пользователем работает токен.

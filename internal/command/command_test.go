@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Kaidstor/yk-kai/internal/youtrack"
 )
@@ -144,15 +143,31 @@ func TestReplaceFold(t *testing.T) {
 	}
 }
 
-func TestDurationPattern(t *testing.T) {
-	for _, ok := range []string{"2h", "45m", "1d 2h", "1w", "1d 2h 30m"} {
-		if !duration.MatchString(ok) {
-			t.Fatalf("%q должно приниматься", ok)
-		}
+func TestResolveCommandAliases(t *testing.T) {
+	cases := []struct {
+		in   []string
+		name string
+		rest string
+	}{
+		{[]string{"show", "PROJ-1"}, "get", "PROJ-1"},
+		{[]string{"view", "PROJ-1", "--full"}, "get", "PROJ-1 --full"},
+		{[]string{"update", "PROJ-1", "--state", "Done"}, "set", "PROJ-1 --state Done"},
+		{[]string{"edit", "PROJ-1", "--summary", "x"}, "set", "PROJ-1 --summary x"},
+		{[]string{"list", "--query", "project: PROJ"}, "search", "--query project: PROJ"},
+		{[]string{"ls", "project: PROJ"}, "search", "project: PROJ"},
+		{[]string{"issue", "get", "PROJ-1"}, "get", "PROJ-1"},
+		{[]string{"issues", "get", "PROJ-1"}, "get", "PROJ-1"},
+		{[]string{"issue", "PROJ-1", "--full"}, "get", "PROJ-1 --full"},
+		{[]string{"issue", "update", "PROJ-1", "--state", "Review"}, "set", "PROJ-1 --state Review"},
+		{[]string{"issue", "create", "Fix bug"}, "create", "Fix bug"},
+		{[]string{"issue", "--help"}, "help", ""},
+		{[]string{"update", "--help"}, "help", ""},
+		{[]string{"issue"}, "help", ""},
 	}
-	for _, bad := range []string{"2 часа", "2", "h2", "2 hours"} {
-		if duration.MatchString(bad) {
-			t.Fatalf("%q не должно приниматься", bad)
+	for _, tc := range cases {
+		gotName, gotRest := resolveCommand(tc.in)
+		if gotName != tc.name || strings.Join(gotRest, " ") != tc.rest {
+			t.Fatalf("resolveCommand(%v) = (%q, %v), ждали (%q, %q)", tc.in, gotName, gotRest, tc.name, tc.rest)
 		}
 	}
 }
@@ -177,38 +192,19 @@ func TestParseArgsFlagsAfterPositional(t *testing.T) {
 }
 
 func TestParseArgsKeepsOrder(t *testing.T) {
-	fs := flag.NewFlagSet("worklog", flag.ContinueOnError)
+	fs := flag.NewFlagSet("set", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	date := fs.String("date", "", "")
+	state := fs.String("state", "", "")
 
-	positional, err := parseArgs(fs, []string{"PROJ-1", "--date", "2026-01-02", "2h", "текст"})
+	positional, err := parseArgs(fs, []string{"PROJ-1", "--state", "Review", "extra"})
 	if err != nil {
 		t.Fatalf("неожиданная ошибка: %v", err)
 	}
-	if *date != "2026-01-02" {
-		t.Fatalf("--date не разобрался: %q", *date)
+	if *state != "Review" {
+		t.Fatalf("--state не разобрался: %q", *state)
 	}
-	if strings.Join(positional, "|") != "PROJ-1|2h|текст" {
+	if strings.Join(positional, "|") != "PROJ-1|extra" {
 		t.Fatalf("порядок позиционных нарушен: %v", positional)
-	}
-}
-
-func TestWorkDateSurvivesTimezone(t *testing.T) {
-	// Гоча: YouTrack округляет метку списания до дня по UTC, и полночь по
-	// местному времени восточнее Гринвича уезжала на сутки назад.
-	msk := time.FixedZone("MSK", 3*60*60)
-	day := time.Date(2026, 8, 26, 0, 0, 0, 0, msk)
-
-	got := workDate(day)
-	if got.UTC().Format("2006-01-02") != "2026-08-26" {
-		t.Fatalf("дата уехала: %s", got.UTC())
-	}
-
-	// И на запад тоже: полдень UTC не должен скатиться на предыдущий день.
-	pdt := time.FixedZone("PDT", -7*60*60)
-	got = workDate(time.Date(2026, 8, 26, 23, 30, 0, 0, pdt))
-	if got.UTC().Format("2006-01-02") != "2026-08-26" {
-		t.Fatalf("дата уехала: %s", got.UTC())
 	}
 }
 

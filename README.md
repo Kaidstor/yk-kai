@@ -1,6 +1,6 @@
 # yk-kai
 
-CLI для YouTrack: задачи, поля, комментарии, доска, связи, списание времени.
+CLI для YouTrack: задачи, поля, комментарии, связи.
 Работает и руками, и из агента — по умолчанию печатает JSON-конверт, по
 `--human` человекочитаемый текст.
 
@@ -58,16 +58,16 @@ yk-kai doctor          # токен, пользователь, проект, д�
 ```sh
 yk-kai create "Summary" --type Bug --priority Major     # + прицепит к доске
 cat desc.md | yk-kai create "Summary" --type Bug        # описание со stdin
-yk-kai get PROJ-123 --full                              # + описание, связи, комментарии
-yk-kai set PROJ-123 --state Review --assignee alice
+yk-kai get PROJ-123 --full                              # + описание, связи, комментарии (алиасы: show, view)
+yk-kai set PROJ-123 --state Review --assignee alice     # алиасы: update, edit
 yk-kai state PROJ-123 Done
 yk-kai comment PROJ-123 --file msg.md
-yk-kai board PROJ-123                                   # прицепить к доске отдельно
-yk-kai search "project: PROJ #Unresolved for: alice" --limit 20
+yk-kai search "project: PROJ #Unresolved for: alice" --limit 20  # алиасы: list, ls
 yk-kai link PROJ-123 "depends on" PROJ-456
-yk-kai links PROJ-123
-yk-kai worklog PROJ-123 2h "что делал"
+yk-kai unlink PROJ-123 "depends on" PROJ-456
 ```
+
+Поддерживается необязательный префикс `issue`/`issues` (например, `yk-kai issue get PROJ-123`).
 
 Значения полей понимаются и по-русски («Ошибка», «Обычная», «В работе»): в
 интерфейсе YouTrack они показаны так, а API принимает только английские.
@@ -104,7 +104,7 @@ ln -s "$PWD/skills/yk" ~/.claude/skills/yk
 ## Что делает за тебя
 
 - **Цепляет задачу к доске.** Созданная через API задача на доске не появляется
-  сама — `create` кладёт её в спринт из настроек, `board` чинит забытое.
+  сама — `create` кладёт её в спринт из настроек (отключить — `--no-board`).
 - **Проверяет, что поля применились.** YouTrack отвечает успехом и на запрос,
   который ничего не записал; `create` и `set` сверяют задачу после записи,
   дожимают непринятые поля и возвращают код 1, если поле так и не встало.

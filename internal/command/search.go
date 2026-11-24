@@ -20,12 +20,16 @@ func cmdSearch(ctx context.Context, p *output.Printer, args []string) int {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	limit := fs.Int("limit", 20, "сколько задач вернуть")
+	queryFlag := fs.String("query", "", "поисковый запрос")
 	positional, err := parseArgs(fs, args)
 	if err != nil {
 		return p.Fail("search", exit.Tool, "usage", "%s", err)
 	}
 
 	query := strings.TrimSpace(strings.Join(positional, " "))
+	if query == "" {
+		query = strings.TrimSpace(*queryFlag)
+	}
 	if query == "" {
 		return p.Fail("search", exit.Tool, "usage",
 			"нужен запрос: yk-kai search \"project: PROJ #Unresolved for: <login>\"")

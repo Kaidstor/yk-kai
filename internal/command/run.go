@@ -32,23 +32,22 @@ const usage = `yk-kai — задачи YouTrack из терминала и из 
 
 Задачи:
   create <summary>              создать задачу и прицепить к доске
-  get <ISSUE> [--full]          показать задачу; --full — описание, связи, комментарии
-  set <ISSUE> [флаги]           сменить поля задачи
+  get <ISSUE> [--full]          показать задачу; --full — описание, связи, комментарии (алиасы: show, view)
+  set <ISSUE> [флаги]           сменить поля задачи (алиасы: update, edit)
   state <ISSUE> <состояние>     сокращение для set --state
   comment <ISSUE> [текст]       комментарий; без текста читается stdin
-  board <ISSUE>                 прицепить существующую задачу к доске
-  search <запрос> [--limit N]   поиск задач
+  search <запрос> [--limit N]   поиск задач (алиасы: list, ls; можно --query)
 
-Связи и время:
+Связи:
   link <ISSUE> <тип> <ISSUE>    depends on, subtask of, parent for, relates to, duplicates
-  links <ISSUE>                 показать связи задачи
   unlink <ISSUE> <тип> <ISSUE>  снять связь; типы те же, что у link
-  worklog <ISSUE> <длит> [текст]  списать время: 2h, 45m, "1d 2h"
 
 Служебное:
   config [init]                 показать настройки или создать шаблон
   doctor                        токен, пользователь, проект, доска
   version
+
+Необязательный префикс issue/issues поддерживается (например: yk-kai issue get PROJ-123).
 
 Флаги create:
   --type <Type>                 Bug | Task | Feature | Exception | Cosmetics |
@@ -79,12 +78,60 @@ token_ref.
   0 сделано и проверено         2 ошибка инструмента или аргументов   4 YouTrack не ответил
   1 YouTrack не применил        3 не найдено`
 
+var commandAliases = map[string]string{
+	"show":   "get",
+	"view":   "get",
+	"update": "set",
+	"edit":   "set",
+	"list":   "search",
+	"ls":     "search",
+}
+
+var knownCommands = map[string]bool{
+	"create": true, "get": true, "set": true, "state": true,
+	"comment": true, "search": true, "link": true, "unlink": true,
+	"config": true, "doctor": true, "version": true, "--version": true,
+}
+
+func isHelpArg(a string) bool {
+	return a == "-h" || a == "--help" || a == "help"
+}
+
+// resolveCommand разворачивает необязательный префикс issue/issues и алиасы
+// (show/view → get, update/edit → set, list/ls → search).
+func resolveCommand(args []string) (string, []string) {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		return "help", nil
+	}
+	unwrapped := false
+	if args[0] == "issue" || args[0] == "issues" {
+		unwrapped = true
+		args = args[1:]
+		if len(args) == 0 || isHelpArg(args[0]) {
+			return "help", nil
+		}
+	}
+	for _, a := range args[1:] {
+		if a == "-h" || a == "--help" {
+			return "help", nil
+		}
+	}
+	name, rest := args[0], args[1:]
+	if canonical, ok := commandAliases[name]; ok {
+		return canonical, rest
+	}
+	if unwrapped && !knownCommands[name] && !strings.HasPrefix(name, "-") {
+		return "get", args
+	}
+	return name, rest
+}
+
 // Run разбирает argv и возвращает код выхода. Ошибки печатает сам — наверх
 // уходит только число.
 func Run(args []string) int {
 	human, args := splitGlobalFlags(args)
-
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	name, rest := resolveCommand(args)
+	if name == "help" {
 		fmt.Println(usage)
 		return exit.OK
 	}
@@ -95,7 +142,6 @@ func Run(args []string) int {
 	defer cancel()
 
 	p := output.New(human)
-	name, rest := args[0], args[1:]
 
 	switch name {
 	case "create":
@@ -108,18 +154,12 @@ func Run(args []string) int {
 		return cmdState(ctx, p, rest)
 	case "comment":
 		return cmdComment(ctx, p, rest)
-	case "board":
-		return cmdBoard(ctx, p, rest)
 	case "search":
 		return cmdSearch(ctx, p, rest)
 	case "link":
 		return cmdLink(ctx, p, rest)
-	case "links":
-		return cmdLinks(ctx, p, rest)
 	case "unlink":
 		return cmdUnlink(ctx, p, rest)
-	case "worklog":
-		return cmdWorklog(ctx, p, rest)
 	case "config":
 		return cmdConfig(p, rest)
 	case "doctor":
